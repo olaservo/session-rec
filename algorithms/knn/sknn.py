@@ -38,7 +38,7 @@ class ContextKNN:
         Header of the timestamp column in the input file. (default: 'Time')
     '''
 
-    def __init__( self, k, sample_size=1000, sampling='recent',  similarity = 'jaccard', remind=False, pop_boost=0, extend=False, normalize=True, session_key = 'SessionId', item_key= 'ItemId', time_key= 'Time' ):
+    def __init__( self, k=100, sample_size=1000, sampling='recent',  similarity = 'jaccard', remind=False, pop_boost=0, extend=False, normalize=True, session_key = 'SessionId', item_key= 'ItemId', time_key= 'Time' ):
        
         self.remind = remind
         self.k = k
