@@ -10,9 +10,11 @@ DATA_FILE = 'sessions_viewed_with_purchased.csv'
 DATA_VIEWS_FILE = 'views'
 DATA_PURCHASES_FILE = 'purchases'
 
-# filtering config (all methods)
+# filtering default config
 MIN_SESSION_LENGTH = 2
 MIN_ITEM_SUPPORT = 5
+# TODO: find optimal number or use stat?
+MAX_SESSION_LENGTH = 100
 
 # days test default config
 DAYS_TEST = 2
@@ -74,6 +76,7 @@ def load_data(file):
 
 def filter_data(data, min_item_support, min_session_length):
     # TODO: should views include purchased items from session?
+    # TODO: Truncate sessions to a max length
     start = time.perf_counter()
     # filter item support
     data['support'] = data.groupby('ItemId')['ItemId'].transform('count')
@@ -104,53 +107,36 @@ def filter_data(data, min_item_support, min_session_length):
 
     return data
 
-# TODO: which version to use?
-def split_data_gru4rec(data, output_file):
-    tmax = data.Time.max()
-    session_max_times = data.groupby('SessionId').Time.max()
-    session_train = session_max_times[session_max_times < tmax - 86400].index
-    session_test = session_max_times[session_max_times >= tmax - 86400].index
-    train = data[np.in1d(data.SessionId, session_train)]
-    test = data[np.in1d(data.SessionId, session_test)]
-    test = test[np.in1d(test.ItemId, train.ItemId)]
-    tslength = test.groupby('SessionId').size()
-    test = test[np.in1d(test.SessionId, tslength[tslength >= 2].index)]
-    print('Full train set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(train), train.SessionId.nunique(),
-                                                                             train.ItemId.nunique()))
-    train.to_csv(output_file + '_train_full.txt', sep='\t', index=False)
-    print('Test set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(test), test.SessionId.nunique(),
-                                                                       test.ItemId.nunique()))
-    test.to_csv(output_file + '_test.txt', sep='\t', index=False)
-
-    tmax = train.Time.max()
-    session_max_times = train.groupby('SessionId').Time.max()
-    session_train = session_max_times[session_max_times < tmax - 86400].index
-    session_valid = session_max_times[session_max_times >= tmax - 86400].index
-    train_tr = train[np.in1d(train.SessionId, session_train)]
-    valid = train[np.in1d(train.SessionId, session_valid)]
-    valid = valid[np.in1d(valid.ItemId, train_tr.ItemId)]
-    tslength = valid.groupby('SessionId').size()
-    valid = valid[np.in1d(valid.SessionId, tslength[tslength >= 2].index)]
-    print('Train set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(train_tr), train_tr.SessionId.nunique(),
-                                                                        train_tr.ItemId.nunique()))
-    train_tr.to_csv(output_file + '_train_tr.txt', sep='\t', index=False)
-    print('Validation set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(valid), valid.SessionId.nunique(),
-                                                                             valid.ItemId.nunique()))
-    valid.to_csv(output_file + '_train_valid.txt', sep='\t', index=False)
-
 
 def split_data(data, output_file, days_test):
     data_end = datetime.fromtimestamp(data.Time.max(), timezone.utc)
     test_from = data_end - timedelta(days=days_test)
 
-    session_max_times = data.groupby('SessionId').Time.max()
-    session_train = session_max_times[session_max_times < test_from.timestamp()].index
-    session_test = session_max_times[session_max_times >= test_from.timestamp()].index
-    train = data[np.in1d(data.SessionId, session_train)]
-    test = data[np.in1d(data.SessionId, session_test)]
+    start = time.perf_counter()
+    # TODO: should we split by session start or session end?
+    # The original method from this repo is splitting by end (max)
+    data['max_session_time'] = data.groupby('SessionId')['Time'].transform('max')
+    train = data[data['max_session_time'] < test_from.timestamp()]
+    test = data[data['max_session_time'] >= test_from.timestamp()]
+    end = time.perf_counter()
+    print(f'Split test and train data by date in {end-start:0.4f}')
+
+    start = time.perf_counter()
+    # Filter test set to only include sessions where the item it is also in the training set
     test = test[np.in1d(test.ItemId, train.ItemId)]
-    tslength = test.groupby('SessionId').size()
-    test = test[np.in1d(test.SessionId, tslength[tslength >= 2].index)]
+    end = time.perf_counter()
+    print(f'Filter test data by ItemId in {end-start:0.4f}')
+    start = time.perf_counter()
+    # Filter out sessions that are split across train and test
+    # get unique first to speed up intersection
+    train_session_ids = train.SessionId.unique()
+    test_session_ids = test.SessionId.unique()
+    intersecting_session_ids = np.intersect1d(train_session_ids, test_session_ids, assume_unique=True)
+    train = train[~train['SessionId'].isin(intersecting_session_ids)]
+    test = test[~test['SessionId'].isin(intersecting_session_ids)]
+    end = time.perf_counter()
+    print(f'Filter test and train data by SessionId in {end-start:0.4f}')
+
     print('Full train set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(train), train.SessionId.nunique(),
                                                                              train.ItemId.nunique()))
     train.to_csv(output_file + '_train_full.txt', sep='\t', index=False)
@@ -158,12 +144,12 @@ def split_data(data, output_file, days_test):
                                                                        test.ItemId.nunique()))
     test.to_csv(output_file + '_test.txt', sep='\t', index=False)
 
-
+# TODO: optimize if using this
 def slice_data(data, output_file, num_slices, days_offset, days_shift, days_train, days_test):
     for slice_id in range(0, num_slices):
         split_data_slice(data, output_file, slice_id, days_offset + (slice_id * days_shift), days_train, days_test)
 
-
+# TODO: optimize if using this
 def split_data_slice(data, output_file, slice_id, days_offset, days_train, days_test):
     data_start = datetime.fromtimestamp(data.Time.min(), timezone.utc)
     data_end = datetime.fromtimestamp(data.Time.max(), timezone.utc)
