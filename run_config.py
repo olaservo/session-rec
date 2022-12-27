@@ -1,28 +1,27 @@
+import gc
+import glob
 import importlib
-from pathlib import Path
+import os
+import random
+import socket
 import sys
 import time
-import os
-import glob
 import traceback
-import socket
+from builtins import Exception
+from pathlib import Path
+
+import dill
 import numpy as np
 import pandas as pd
-from skopt import Optimizer
-
+import telegram
 import yaml
+from skopt import Optimizer
+from telegram.ext.commandhandler import CommandHandler
+from telegram.ext.updater import Updater
 
 import evaluation.loader as dl
-from builtins import Exception
-import pickle
-import dill
-from telegram.ext.updater import Updater
-from telegram.ext.commandhandler import CommandHandler
-import telegram
-import random
-import gc
 
-# telegram notificaitons
+# telegram notifications
 CHAT_ID = -1
 BOT_TOKEN = 'API_TOKEN'
 
@@ -36,14 +35,14 @@ if NOTIFY:
 
 
 def main(conf, out=None):
-    '''
+    """
     Execute experiments for the given configuration path
         --------
         conf: string
             Configuration path. Can be a single file or a folder.
         out: string
             Output folder path for endless run listening for new configurations.
-    '''
+    """
     print('Checking {}'.format(conf))
     if TELEGRAM_STATUS:
         updater.dispatcher.add_handler( CommandHandler('status', status) )
@@ -54,7 +53,7 @@ def main(conf, out=None):
         print('Loading file')
         send_message('processing config ' + conf)
         stream = open(str(file))
-        c = yaml.load(stream)
+        c = yaml.safe_load(stream)
         stream.close()
 
         try:
@@ -96,7 +95,7 @@ def main(conf, out=None):
                         send_message('processing config ' + list[0])
 
                         stream = open(str(file))
-                        c = yaml.load(stream)
+                        c = yaml.safe_load(stream)
                         stream.close()
 
                         run_file(c)
@@ -133,7 +132,7 @@ def main(conf, out=None):
                     send_message('processing config ' + conf)
 
                     stream = open(str(Path(conf)))
-                    c = yaml.load(stream)
+                    c = yaml.safe_load(stream)
                     stream.close()
 
                     run_file(c)
@@ -154,12 +153,12 @@ def main(conf, out=None):
 
 
 def run_file(conf):
-    '''
+    """
     Execute experiments for one single configuration file
         --------
         conf: dict
             Configuration dictionary
-    '''
+    """
     if conf['type'] == 'single':
         run_single(conf)
     elif conf['type'] == 'window':
@@ -173,14 +172,14 @@ def run_file(conf):
 
 
 def run_single(conf, slice=None):
-    '''
+    """
     Evaluate the algorithms for a single split
         --------
         conf: dict
             Configuration dictionary
         slice: int
             Optional index for the window slice
-    '''
+    """
     print('run test single')
 
     algorithms = create_algorithms_dict(conf['algorithms'])
@@ -224,14 +223,14 @@ def run_single(conf, slice=None):
 
 
 def run_opt_single(conf, iteration, globals):
-    '''
+    """
     Evaluate the algorithms for a single split
         --------
         conf: dict
             Configuration dictionary
         slice: int
             Optional index for the window slice
-    '''
+    """
     print('run test opt single')
 
     algorithms = create_algorithms_dict(conf['algorithms'])
@@ -299,14 +298,14 @@ def run_opt_single(conf, iteration, globals):
 
 
 def run_bayopt_single(conf, algorithms, iteration, globals):
-    '''
+    """
     Evaluate the algorithms for a single split
         --------
         conf: dict
             Configuration dictionary
         slice: int
             Optional index for the window slice
-    '''
+    """
     print('run test opt single')
 
     for k, a in algorithms.items():
@@ -375,12 +374,12 @@ def run_bayopt_single(conf, algorithms, iteration, globals):
 
 
 def run_window(conf):
-    '''
+    """
      Evaluate the algorithms for all slices
          --------
          conf: dict
              Configuration dictionary
-     '''
+     """
 
     print('run test window')
 
@@ -397,12 +396,12 @@ def run_window(conf):
 
 
 def run_opt(conf):
-    '''
+    """
      Perform an optmization for the algorithms
          --------
          conf: dict
              Configuration dictionary
-     '''
+     """
 
     iterations = conf['optimize']['iterations'] if 'optimize' in conf and 'iterations' in conf['optimize'] else 100
     start = conf['optimize']['iterations_skip'] if 'optimize' in conf and 'iterations_skip' in conf['optimize'] else 0
@@ -424,12 +423,12 @@ def run_opt(conf):
 
 
 def run_bayopt(conf):
-    '''
+    """
      Perform a bayesian optmization for the algorithms using
          --------
          conf: dict
              Configuration dictionary
-     '''
+     """
 
     iterations = conf['optimize']['iterations'] if 'optimize' in conf and 'iterations' in conf['optimize'] else 100
     start = conf['optimize']['iterations_skip'] if 'optimize' in conf and 'iterations_skip' in conf['optimize'] else 0
@@ -465,7 +464,7 @@ def run_bayopt(conf):
 
 
 def eval_algorithm(train, test, key, algorithm, eval, metrics, results, conf, slice=None, iteration=None, out=True):
-    '''
+    """
     Evaluate one single algorithm
         --------
         train : Dataframe
@@ -486,7 +485,7 @@ def eval_algorithm(train, test, key, algorithm, eval, metrics, results, conf, sl
             Configuration dictionary
         slice: int
             Optional index for the window slice
-    '''
+    """
     ts = time.time()
     print('fit ', key)
     # send_message( 'training algorithm ' + key )
@@ -521,7 +520,7 @@ def eval_algorithm(train, test, key, algorithm, eval, metrics, results, conf, sl
 
 
 def write_results_csv(results, conf, iteration=None, extra=None):
-    '''
+    """
     Write the result array to a csv file, if a result folder is defined in the configuration
         --------
         results : dict
@@ -530,7 +529,7 @@ def write_results_csv(results, conf, iteration=None, extra=None):
             Optional for the window mode
         extra: string
             Optional string to add to the file name
-    '''
+    """
 
     if 'results' in conf and 'folder' in conf['results']:
 
@@ -568,14 +567,14 @@ def write_results_csv(results, conf, iteration=None, extra=None):
 
 
 def save_model(key, algorithm, conf):
-    '''
+    """
     Save the model object for reuse with FileModel
         --------
         algorithm : object
             Dictionary of all results res[algorithm_key][metric_key]
         conf : object
             Configuration dictionary, has to include results.pickel_models
-    '''
+    """
 
     file_name = conf['results']['folder'] + '/' + conf['key'] + '_' + conf['data']['name'] + '_' + key + '.pkl'
     file_name = Path(file_name)
@@ -589,34 +588,34 @@ def save_model(key, algorithm, conf):
 
 
 def print_results(res):
-    '''
+    """
     Print the result array
         --------
         res : dict
             Dictionary of all results res[algorithm_key][metric_key]
-    '''
+    """
     for k, l in res.items():
         for e in l:
             print(k, ':', e[0], ' ', e[1])
 
 
 def load_evaluation(module):
-    '''
+    """
     Load the evaluation module
         --------
         module : string
             Just the last part of the path, e.g., evaluation_last
-    '''
+    """
     return importlib.import_module('evaluation.' + module)
 
 
 def create_algorithms_dict(list):
-    '''
+    """
     Create algorithm instances from the list of algorithms in the configuration
         --------
         list : list of dicts
             Dicts represent a single algorithm with class, a key, and optionally a param dict
-    '''
+    """
 
     algorithms = {}
     for algorithm in list:
@@ -674,12 +673,12 @@ def create_algorithms_dict(list):
 
 
 def create_algorithm_dict(entry, additional_params={}):
-    '''
+    """
     Create algorithm instance from a single algorithms entry in the configuration with additional params
         --------
         entry : dict
             Dict represent a single algorithm with class, a key, and optionally a param dict
-    '''
+    """
 
     algorithms = {}
     algorithm = entry
@@ -835,12 +834,12 @@ def create_linspace(value):
 
 
 def create_metric_list(list):
-    '''
+    """
     Create metric class instances from the list of metrics in the configuration
         --------
         list : list of dicts
             Dicts represent a single metric with class and optionally the list length
-    '''
+    """
     metrics = []
     for metric in list:
         metrics += create_metric(metric)
@@ -860,12 +859,12 @@ def create_metric(metric):
 
 
 def load_class(path):
-    '''
+    """
     Load a class from the path in the configuration
         --------
         path : dict of dicts
             Path to the class, e.g., algorithms.knn.cknn.ContextKNNN
-    '''
+    """
     module_name, class_name = path.rsplit('.', 1)
 
     Class = getattr(importlib.import_module(module_name), class_name)
@@ -873,12 +872,12 @@ def load_class(path):
 
 
 def ensure_dir(file_path):
-    '''
+    """
     Create all directories in the file_path if non-existent.
         --------
         file_path : string
             Path to the a file
-    '''
+    """
     directory = os.path.dirname(file_path)
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -919,5 +918,4 @@ if __name__ == '__main__':
         main(sys.argv[1], out=sys.argv[2] if len(sys.argv) > 2 else None)
     else:
         print('File or folder expected.')
-
 

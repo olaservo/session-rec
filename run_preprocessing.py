@@ -15,42 +15,41 @@ import yaml
 import importlib
 import traceback
 import os
+import time
 
 
 def main(conf):
-    '''
+    """
     Execute experiments for the given configuration path
         --------
         conf: string
             Configuration path. Can be a single file or a folder.
         out: string
-            Output folder path for endless run listening for new configurations. 
-    '''
+            Output folder path for endless run listening for new configurations.
+    """
+    start = time.perf_counter()
     print('Checking {}'.format(conf))
 
     file = Path(conf)
     if file.is_file():
-
         print('Loading file')
         stream = open(str(file))
-        c = yaml.load(stream)
+        c = yaml.safe_load(stream)
         stream.close()
         print('processing config ' + conf)
 
         try:
-
             run_file(c)
-            print('finished config ' + conf)
+            end = time.perf_counter()
+            print(f'Finished config {conf} in {end-start:0.4f}')
 
         except (KeyboardInterrupt, SystemExit):
-
             print('manually aborted config ' + conf)
             raise
 
         except Exception:
             print('error for config ', file)
             traceback.print_exc()
-
         exit()
 
     print('File not found: ' + conf)
