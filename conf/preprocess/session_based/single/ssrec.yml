@@ -1,0 +1,17 @@
+---
+type: single # single|window
+mode: session_based # session_based | session_aware
+preprocessor: ssrec #
+data:
+  folder: data/ssrec/
+  prefix: sessions_viewed_with_purchased.csv
+
+filter:
+  min_item_support: 5
+  min_session_length: 2
+
+params:
+  days_test: 1
+
+output:
+  folder: data/ssrec/prepared/
